@@ -6,7 +6,7 @@
 //              operations: request latching, hit/miss detection, memory refill,
 //              and CPU response generation.
 //
-// Stage 3: Cache Lookup & Hit Path Implementation
+// Stage 4: Memory Miss Path Implementation
 // ============================================================================
 
 `timescale 1ns / 1ps
@@ -75,10 +75,13 @@ module cache_controller #(
     wire [OFFSET_WIDTH-1:0] req_offset   = latched_addr_q[3:0];
     wire [1:0]              req_word_sel = latched_addr_q[3:2];
 
-    // Read index to cache storage connects directly to latched index
+    // Read index connects to incoming address in IDLE for zero-wait indexing,
+    // and stays anchored to latched_index during all subsequent stages.
     assign cache_read_index  = (state_q == STATE_IDLE && cpu_req_val) ? cpu_req_addr[9:4] : req_index;
     assign cache_write_index = req_index;
     assign cache_write_tag   = req_tag;
+
+    // Strictly block-aligned address (lowest 4 bits zeroed)
     assign mem_req_addr      = {req_tag, req_index, 4'b0000};
 
     // ========================================================================
@@ -148,22 +151,22 @@ module cache_controller #(
             end
 
             // ----------------------------------------------------------------
-            // LOOKUP: Evaluate hit/miss and capture block data on hit
+            // LOOKUP: Evaluate hit/miss and branch
             // ----------------------------------------------------------------
             STATE_LOOKUP: begin
                 if (cache_hit) begin
-                    // Cache Hit: capture data from cache storage line
+                    // Cache Hit: sample line data into buffer and respond
                     data_buffer_d = cache_read_data;
                     latch_data_en = 1'b1;
                     state_d       = STATE_RESPOND;
                 end else begin
-                    // Cache Miss: initiate memory request path
+                    // Cache Miss: branch to main memory request
                     state_d       = STATE_MEM_REQUEST;
                 end
             end
 
             // ----------------------------------------------------------------
-            // MEM_REQUEST: Request 16-byte block from main memory
+            // MEM_REQUEST: Send block-aligned read request to memory interface
             // ----------------------------------------------------------------
             STATE_MEM_REQUEST: begin
                 mem_req_val = 1'b1;
@@ -171,11 +174,17 @@ module cache_controller #(
             end
 
             // ----------------------------------------------------------------
-            // MEM_WAIT: Await memory ready
+            // MEM_WAIT: Await memory response ready without re-asserting request
             // ----------------------------------------------------------------
             STATE_MEM_WAIT: begin
+                mem_req_val = 1'b0; // Avoid repeated requests
                 if (mem_req_ready) begin
-                    state_d = STATE_REFILL;
+                    // Latch 128-bit memory response block into data buffer
+                    data_buffer_d = mem_resp_data;
+                    latch_data_en = 1'b1;
+                    state_d       = STATE_REFILL;
+                end else begin
+                    state_d       = STATE_MEM_WAIT;
                 end
             end
 
