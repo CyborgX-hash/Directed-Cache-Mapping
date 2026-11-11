@@ -6,18 +6,18 @@
 //              operations: request latching, hit/miss detection, memory refill,
 //              and CPU response generation.
 //
-// Stage 1: FSM State Architecture & Interface Skeleton
+// Stage 2: CPU Request Address Latching & Address Decoding
 // ============================================================================
 
 `timescale 1ns / 1ps
 
 module cache_controller #(
-    parameter ADDR_WIDTH  = 32,
-    parameter DATA_WIDTH  = 32,
-    parameter BLOCK_WIDTH = 128,
-    parameter TAG_WIDTH   = 22,
-    parameter INDEX_WIDTH = 6,
-    parameter OFFSET_WIDTH= 4
+    parameter ADDR_WIDTH   = 32,
+    parameter DATA_WIDTH   = 32,
+    parameter BLOCK_WIDTH  = 128,
+    parameter TAG_WIDTH    = 22,
+    parameter INDEX_WIDTH  = 6,
+    parameter OFFSET_WIDTH = 4
 )(
     input  wire                   clk,
     input  wire                   rst_n,
@@ -48,7 +48,7 @@ module cache_controller #(
 );
 
     // ========================================================================
-    // State Encoding (3-bit Gray / Binary)
+    // State Encoding
     // ========================================================================
     localparam [2:0]
         STATE_IDLE        = 3'b000,
@@ -60,41 +60,69 @@ module cache_controller #(
 
     reg [2:0] state_q, state_d;
 
-    // Synchronous FSM State Register with Active-Low Reset
+    // ========================================================================
+    // Request Latching Registers
+    // ========================================================================
+    reg [ADDR_WIDTH-1:0] latched_addr_q, latched_addr_d;
+    reg                  latch_addr_en;
+
+    // Field extractions from latched address
+    wire [TAG_WIDTH-1:0]    req_tag      = latched_addr_q[31:10];
+    wire [INDEX_WIDTH-1:0]  req_index    = latched_addr_q[9:4];
+    wire [OFFSET_WIDTH-1:0] req_offset   = latched_addr_q[3:0];
+    wire [1:0]              req_word_sel = latched_addr_q[3:2];
+
+    // Read index to cache storage connects directly to latched index
+    assign cache_read_index  = (state_q == STATE_IDLE && cpu_req_val) ? cpu_req_addr[9:4] : req_index;
+    assign cache_write_index = req_index;
+    assign cache_write_tag   = req_tag;
+    assign mem_req_addr      = {req_tag, req_index, 4'b0000};
+
+    // ========================================================================
+    // Synchronous State & Address Latching
+    // ========================================================================
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state_q <= STATE_IDLE;
+            state_q        <= STATE_IDLE;
+            latched_addr_q <= {ADDR_WIDTH{1'b0}};
         end else begin
-            state_q <= state_d;
+            state_q        <= state_d;
+            if (latch_addr_en) begin
+                latched_addr_q <= latched_addr_d;
+            end
         end
     end
 
-    // Temporary tie-offs for Stage 1 skeleton
-    assign cache_read_index  = {INDEX_WIDTH{1'b0}};
-    assign cache_write_index = {INDEX_WIDTH{1'b0}};
-    assign cache_write_tag   = {TAG_WIDTH{1'b0}};
-    assign mem_req_addr      = {ADDR_WIDTH{1'b0}};
-
-    // Next-State Logic (Skeleton)
+    // ========================================================================
+    // Next-State and Combinational Control Logic
+    // ========================================================================
     always @(*) begin
         state_d           = state_q;
+        latched_addr_d    = latched_addr_q;
+        latch_addr_en     = 1'b0;
+
         cpu_req_ready     = 1'b0;
         cpu_resp_val      = 1'b0;
         cpu_resp_data     = {DATA_WIDTH{1'b0}};
+
         cache_write_en    = 1'b0;
         cache_write_data  = {BLOCK_WIDTH{1'b0}};
         cache_write_valid = 1'b0;
+
         mem_req_val       = 1'b0;
 
         case (state_q)
             STATE_IDLE: begin
                 cpu_req_ready = 1'b1;
                 if (cpu_req_val) begin
-                    state_d = STATE_LOOKUP;
+                    latched_addr_d = cpu_req_addr;
+                    latch_addr_en  = 1'b1;
+                    state_d        = STATE_LOOKUP;
                 end
             end
 
             STATE_LOOKUP: begin
+                // In LOOKUP, cpu_req_ready is 0; latched_addr_q is held constant
                 if (cache_hit) begin
                     state_d = STATE_RESPOND;
                 end else begin
