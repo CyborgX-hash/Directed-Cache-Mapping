@@ -6,7 +6,12 @@
 //              operations: request latching, hit/miss detection, memory refill,
 //              and CPU response generation.
 //
-// Stage 5: Refill Sequencing & CPU Response Implementation
+// Complete Synthesizable Architecture:
+//   - 6-state Moore/Mealy hybrid FSM
+//   - Zero-bubble address latching
+//   - Block-aligned memory refill protocol
+//   - 4-to-1 32-bit word extraction multiplexer
+//   - Diagnostic FSM state and transaction monitors
 // ============================================================================
 
 `timescale 1ns / 1ps
@@ -44,7 +49,10 @@ module cache_controller #(
     output reg                    mem_req_val,
     output wire [ADDR_WIDTH-1:0]  mem_req_addr,
     input  wire                   mem_req_ready,
-    input  wire [BLOCK_WIDTH-1:0] mem_resp_data
+    input  wire [BLOCK_WIDTH-1:0] mem_resp_data,
+
+    // Diagnostic / Monitor Ports
+    output wire [2:0]             fsm_state
 );
 
     // ========================================================================
@@ -59,6 +67,7 @@ module cache_controller #(
         STATE_RESPOND     = 3'b101;
 
     reg [2:0] state_q, state_d;
+    assign fsm_state = state_q;
 
     // ========================================================================
     // Request Latching & Internal Buffers
@@ -177,7 +186,7 @@ module cache_controller #(
             // MEM_WAIT: Await memory response ready without re-asserting request
             // ----------------------------------------------------------------
             STATE_MEM_WAIT: begin
-                mem_req_val = 1'b0; // Avoid repeated requests
+                mem_req_val = 1'b0; // Maintain protocol: single-pulse request
                 if (mem_req_ready) begin
                     // Latch 128-bit memory response block into data buffer
                     data_buffer_d = mem_resp_data;
