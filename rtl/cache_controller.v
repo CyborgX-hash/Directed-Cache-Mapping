@@ -6,7 +6,7 @@
 //              operations: request latching, hit/miss detection, memory refill,
 //              and CPU response generation.
 //
-// Stage 2: CPU Request Address Latching & Address Decoding
+// Stage 3: Cache Lookup & Hit Path Implementation
 // ============================================================================
 
 `timescale 1ns / 1ps
@@ -61,10 +61,13 @@ module cache_controller #(
     reg [2:0] state_q, state_d;
 
     // ========================================================================
-    // Request Latching Registers
+    // Request Latching & Internal Buffers
     // ========================================================================
-    reg [ADDR_WIDTH-1:0] latched_addr_q, latched_addr_d;
-    reg                  latch_addr_en;
+    reg [ADDR_WIDTH-1:0]  latched_addr_q, latched_addr_d;
+    reg                   latch_addr_en;
+
+    reg [BLOCK_WIDTH-1:0] data_buffer_q, data_buffer_d;
+    reg                   latch_data_en;
 
     // Field extractions from latched address
     wire [TAG_WIDTH-1:0]    req_tag      = latched_addr_q[31:10];
@@ -79,16 +82,34 @@ module cache_controller #(
     assign mem_req_addr      = {req_tag, req_index, 4'b0000};
 
     // ========================================================================
-    // Synchronous State & Address Latching
+    // 4-to-1 Word Selection Multiplexer
+    // ========================================================================
+    reg [DATA_WIDTH-1:0] selected_word;
+    always @(*) begin
+        case (req_word_sel)
+            2'b00:   selected_word = data_buffer_q[31:0];
+            2'b01:   selected_word = data_buffer_q[63:32];
+            2'b10:   selected_word = data_buffer_q[95:64];
+            2'b11:   selected_word = data_buffer_q[127:96];
+            default: selected_word = data_buffer_q[31:0];
+        endcase
+    end
+
+    // ========================================================================
+    // Synchronous State & Register Updates
     // ========================================================================
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state_q        <= STATE_IDLE;
             latched_addr_q <= {ADDR_WIDTH{1'b0}};
+            data_buffer_q  <= {BLOCK_WIDTH{1'b0}};
         end else begin
-            state_q        <= state_d;
+            state_q <= state_d;
             if (latch_addr_en) begin
                 latched_addr_q <= latched_addr_d;
+            end
+            if (latch_data_en) begin
+                data_buffer_q <= data_buffer_d;
             end
         end
     end
@@ -100,6 +121,8 @@ module cache_controller #(
         state_d           = state_q;
         latched_addr_d    = latched_addr_q;
         latch_addr_en     = 1'b0;
+        data_buffer_d     = data_buffer_q;
+        latch_data_en     = 1'b0;
 
         cpu_req_ready     = 1'b0;
         cpu_resp_val      = 1'b0;
@@ -112,6 +135,9 @@ module cache_controller #(
         mem_req_val       = 1'b0;
 
         case (state_q)
+            // ----------------------------------------------------------------
+            // IDLE: Await CPU request
+            // ----------------------------------------------------------------
             STATE_IDLE: begin
                 cpu_req_ready = 1'b1;
                 if (cpu_req_val) begin
@@ -121,33 +147,52 @@ module cache_controller #(
                 end
             end
 
+            // ----------------------------------------------------------------
+            // LOOKUP: Evaluate hit/miss and capture block data on hit
+            // ----------------------------------------------------------------
             STATE_LOOKUP: begin
-                // In LOOKUP, cpu_req_ready is 0; latched_addr_q is held constant
                 if (cache_hit) begin
-                    state_d = STATE_RESPOND;
+                    // Cache Hit: capture data from cache storage line
+                    data_buffer_d = cache_read_data;
+                    latch_data_en = 1'b1;
+                    state_d       = STATE_RESPOND;
                 end else begin
-                    state_d = STATE_MEM_REQUEST;
+                    // Cache Miss: initiate memory request path
+                    state_d       = STATE_MEM_REQUEST;
                 end
             end
 
+            // ----------------------------------------------------------------
+            // MEM_REQUEST: Request 16-byte block from main memory
+            // ----------------------------------------------------------------
             STATE_MEM_REQUEST: begin
                 mem_req_val = 1'b1;
                 state_d     = STATE_MEM_WAIT;
             end
 
+            // ----------------------------------------------------------------
+            // MEM_WAIT: Await memory ready
+            // ----------------------------------------------------------------
             STATE_MEM_WAIT: begin
                 if (mem_req_ready) begin
                     state_d = STATE_REFILL;
                 end
             end
 
+            // ----------------------------------------------------------------
+            // REFILL: Refill cache line
+            // ----------------------------------------------------------------
             STATE_REFILL: begin
                 state_d = STATE_RESPOND;
             end
 
+            // ----------------------------------------------------------------
+            // RESPOND: Present selected 32-bit word to CPU
+            // ----------------------------------------------------------------
             STATE_RESPOND: begin
-                cpu_resp_val = 1'b1;
-                state_d      = STATE_IDLE;
+                cpu_resp_val  = 1'b1;
+                cpu_resp_data = selected_word;
+                state_d       = STATE_IDLE;
             end
 
             default: begin
