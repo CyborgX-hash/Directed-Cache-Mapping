@@ -6,7 +6,7 @@
 //              operations: request latching, hit/miss detection, memory refill,
 //              and CPU response generation.
 //
-// Stage 4: Memory Miss Path Implementation
+// Stage 5: Refill Sequencing & CPU Response Implementation
 // ============================================================================
 
 `timescale 1ns / 1ps
@@ -139,7 +139,7 @@ module cache_controller #(
 
         case (state_q)
             // ----------------------------------------------------------------
-            // IDLE: Await CPU request
+            // IDLE: Await CPU request and latch target address
             // ----------------------------------------------------------------
             STATE_IDLE: begin
                 cpu_req_ready = 1'b1;
@@ -189,10 +189,13 @@ module cache_controller #(
             end
 
             // ----------------------------------------------------------------
-            // REFILL: Refill cache line
+            // REFILL: Write received 128-bit memory block into cache storage
             // ----------------------------------------------------------------
             STATE_REFILL: begin
-                state_d = STATE_RESPOND;
+                cache_write_en    = 1'b1;
+                cache_write_data  = data_buffer_q;
+                cache_write_valid = 1'b1;
+                state_d           = STATE_RESPOND;
             end
 
             // ----------------------------------------------------------------
