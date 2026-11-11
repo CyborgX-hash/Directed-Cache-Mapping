@@ -1,0 +1,8 @@
+# Simulation and Synthesis Artifacts
+*.vcd
+*.vvp
+*.o
+*.out
+*.log
+*.jou
+.DS_Store
