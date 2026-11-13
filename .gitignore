@@ -1,4 +1,5 @@
 # Simulation and Synthesis Artifacts
+sim/
 *.vcd
 *.vvp
 *.o
