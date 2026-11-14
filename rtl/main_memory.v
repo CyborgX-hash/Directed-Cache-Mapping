@@ -39,6 +39,9 @@ module main_memory #(
     output wire [1:0]            fsm_state
 );
 
+    // ========================================================================
+    // Registers & Latches
+    // ========================================================================
     reg [ADDR_BITS-1:0]  latched_addr;
     reg [7:0]            latency_counter;
     reg                  serving;
@@ -48,18 +51,10 @@ module main_memory #(
     // ========================================================================
     // Deterministic Memory Initialization & Data Generation
     // ========================================================================
-    // Modeled memory array backing: 256 blocks x 128 bits = 4 KB memory space
     reg [BLOCK_BITS-1:0] mem_array [0:MEM_DEPTH-1];
 
-    // Block-aligned physical address (lower 4 offset bits zeroed)
     wire [ADDR_BITS-1:0] block_base_addr = {latched_addr[ADDR_BITS-1:4], 4'b0000};
 
-    // Four distinct 32-bit words forming the 128-bit block
-    // Each word's deterministic content corresponds to its byte address in memory:
-    //   Word 0 (Offset 0x0): [31:0]   = block_base_addr + 0
-    //   Word 1 (Offset 0x4): [63:32]  = block_base_addr + 4
-    //   Word 2 (Offset 0x8): [95:64]  = block_base_addr + 8
-    //   Word 3 (Offset 0xC): [127:96] = block_base_addr + 12
     wire [31:0] word0 = block_base_addr | 32'h0000_0000;
     wire [31:0] word1 = block_base_addr | 32'h0000_0004;
     wire [31:0] word2 = block_base_addr | 32'h0000_0008;
@@ -67,14 +62,10 @@ module main_memory #(
 
     wire [BLOCK_BITS-1:0] calc_block_data = {word3, word2, word1, word0};
 
-    // Index calculation for modeled array range (blocks 0 to MEM_DEPTH-1)
-    wire [7:0] block_index = latched_addr[11:4];
+    wire [7:0] block_index      = latched_addr[11:4];
     wire       in_modeled_depth = (latched_addr[ADDR_BITS-1:12] == 20'h0);
-
-    // Selected block: read from initialized array if in modeled depth, else algorithmic calculation
     wire [BLOCK_BITS-1:0] selected_block = in_modeled_depth ? mem_array[block_index] : calc_block_data;
 
-    // Deterministic initialization loop
     integer i;
     initial begin
         for (i = 0; i < MEM_DEPTH; i = i + 1) begin
@@ -87,7 +78,11 @@ module main_memory #(
         end
     end
 
-    // Reset and baseline state sequencing
+    // ========================================================================
+    // Latency Counter & Wait-State Control Logic
+    // ========================================================================
+    // Latency counter operates strictly without artificial delays (#delays).
+    // Configurable parameter LATENCY defines exact number of wait cycles.
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             latched_addr    <= {ADDR_BITS{1'b0}};
@@ -102,8 +97,18 @@ module main_memory #(
                     serving         <= 1'b1;
                     latched_addr    <= mem_req_addr;
                     latency_counter <= 8'd1;
+                    if (LATENCY <= 1) begin
+                        serving       <= 1'b0;
+                        mem_req_ready <= 1'b1;
+                        mem_resp_data <= in_modeled_depth ? mem_array[mem_req_addr[11:4]] :
+                                         { (mem_req_addr[31:4] << 4) | 32'hC,
+                                           (mem_req_addr[31:4] << 4) | 32'h8,
+                                           (mem_req_addr[31:4] << 4) | 32'h4,
+                                           (mem_req_addr[31:4] << 4) | 32'h0 };
+                    end
                 end
             end else begin
+                // Maintain serving flag and increment counter until configured LATENCY reached
                 if (latency_counter < LATENCY) begin
                     latency_counter <= latency_counter + 1'b1;
                 end else begin
