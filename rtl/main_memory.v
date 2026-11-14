@@ -50,7 +50,7 @@ module main_memory #(
     reg [1:0] state_q, state_d;
     assign fsm_state = state_q;
 
-    // Single-cycle ready strobe driven during MEM_RESPONSE state
+    // Single-cycle ready strobe asserted strictly during MEM_RESPONSE state
     assign mem_req_ready = (state_q == MEM_RESPONSE);
 
     // ========================================================================
@@ -65,7 +65,7 @@ module main_memory #(
     // ========================================================================
     reg [BLOCK_BITS-1:0] mem_array [0:MEM_DEPTH-1];
 
-    // Enforce 16-byte block alignment on latched address
+    // Enforce 16-byte block alignment on latched address (mask [3:0])
     wire [ADDR_BITS-1:0] block_base_addr = {latched_addr_q[ADDR_BITS-1:4], 4'b0000};
 
     // Deterministic 32-bit word calculation matching physical byte addresses
@@ -76,7 +76,7 @@ module main_memory #(
 
     wire [BLOCK_BITS-1:0] calc_block_data = {word3, word2, word1, word0};
 
-    // Modeled storage indexing
+    // Modeled storage indexing (lower 8 block bits for 256 entries)
     wire [7:0] block_index      = latched_addr_q[11:4];
     wire       in_modeled_depth = (latched_addr_q[ADDR_BITS-1:12] == 20'h0);
     wire [BLOCK_BITS-1:0] selected_block = in_modeled_depth ? mem_array[block_index] : calc_block_data;
@@ -112,7 +112,7 @@ module main_memory #(
     end
 
     // ========================================================================
-    // Next-State Logic & Transaction Control
+    // Next-State Logic & Block Response Sequencing
     // ========================================================================
     always @(*) begin
         state_d        = state_q;
@@ -127,9 +127,9 @@ module main_memory #(
             MEM_IDLE: begin
                 latency_cnt_d = 8'd0;
                 if (mem_req_val) begin
-                    latched_addr_d = mem_req_addr;
+                    latched_addr_d = {mem_req_addr[ADDR_BITS-1:4], 4'b0000};
                     if (LATENCY <= 1) begin
-                        // 1-cycle turnaround: immediately prepare response
+                        // 1-cycle turnaround: immediately assemble 128-bit block response
                         resp_data_d = (mem_req_addr[ADDR_BITS-1:12] == 20'h0) ?
                                       mem_array[mem_req_addr[11:4]] :
                                       { ((mem_req_addr[ADDR_BITS-1:4] << 4) | 32'hC),
@@ -149,12 +149,12 @@ module main_memory #(
             // ----------------------------------------------------------------
             MEM_ACCESS: begin
                 // In MEM_ACCESS, external bus changes (mem_req_val, mem_req_addr)
-                // are strictly ignored to prevent repeated/spurious triggers.
+                // are strictly ignored to prevent accidental repeated acceptance.
                 if (latency_cnt_q < (LATENCY - 1)) begin
                     latency_cnt_d = latency_cnt_q + 1'b1;
                     state_d       = MEM_ACCESS;
                 end else begin
-                    // Latency period met: load deterministic block into response buffer
+                    // Latency period met: latch complete 128-bit block into response register
                     resp_data_d = selected_block;
                     state_d     = MEM_RESPONSE;
                 end
