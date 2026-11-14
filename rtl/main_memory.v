@@ -32,7 +32,7 @@ module main_memory #(
     input  wire [ADDR_BITS-1:0]  mem_req_addr,
 
     // Response interface
-    output reg                   mem_req_ready,
+    output wire                  mem_req_ready,
     output reg  [BLOCK_BITS-1:0] mem_resp_data,
 
     // Diagnostic / Verification Observability Ports
@@ -40,21 +40,35 @@ module main_memory #(
 );
 
     // ========================================================================
-    // Registers & Latches
+    // State Encodings (3-State Moore FSM)
     // ========================================================================
-    reg [ADDR_BITS-1:0]  latched_addr;
-    reg [7:0]            latency_counter;
-    reg                  serving;
+    localparam [1:0]
+        MEM_IDLE     = 2'b00,
+        MEM_ACCESS   = 2'b01,
+        MEM_RESPONSE = 2'b10;
 
-    assign fsm_state = serving ? 2'b01 : 2'b00;
+    reg [1:0] state_q, state_d;
+    assign fsm_state = state_q;
+
+    // Single-cycle ready strobe driven during MEM_RESPONSE state
+    assign mem_req_ready = (state_q == MEM_RESPONSE);
+
+    // ========================================================================
+    // Internal Registers & Buffers
+    // ========================================================================
+    reg [ADDR_BITS-1:0]  latched_addr_q, latched_addr_d;
+    reg [7:0]            latency_cnt_q,  latency_cnt_d;
+    reg [BLOCK_BITS-1:0] resp_data_d;
 
     // ========================================================================
     // Deterministic Memory Initialization & Data Generation
     // ========================================================================
     reg [BLOCK_BITS-1:0] mem_array [0:MEM_DEPTH-1];
 
-    wire [ADDR_BITS-1:0] block_base_addr = {latched_addr[ADDR_BITS-1:4], 4'b0000};
+    // Enforce 16-byte block alignment on latched address
+    wire [ADDR_BITS-1:0] block_base_addr = {latched_addr_q[ADDR_BITS-1:4], 4'b0000};
 
+    // Deterministic 32-bit word calculation matching physical byte addresses
     wire [31:0] word0 = block_base_addr | 32'h0000_0000;
     wire [31:0] word1 = block_base_addr | 32'h0000_0004;
     wire [31:0] word2 = block_base_addr | 32'h0000_0008;
@@ -62,10 +76,12 @@ module main_memory #(
 
     wire [BLOCK_BITS-1:0] calc_block_data = {word3, word2, word1, word0};
 
-    wire [7:0] block_index      = latched_addr[11:4];
-    wire       in_modeled_depth = (latched_addr[ADDR_BITS-1:12] == 20'h0);
+    // Modeled storage indexing
+    wire [7:0] block_index      = latched_addr_q[11:4];
+    wire       in_modeled_depth = (latched_addr_q[ADDR_BITS-1:12] == 20'h0);
     wire [BLOCK_BITS-1:0] selected_block = in_modeled_depth ? mem_array[block_index] : calc_block_data;
 
+    // Array initialization
     integer i;
     initial begin
         for (i = 0; i < MEM_DEPTH; i = i + 1) begin
@@ -79,45 +95,84 @@ module main_memory #(
     end
 
     // ========================================================================
-    // Latency Counter & Wait-State Control Logic
+    // Synchronous FSM State & Register Updates
     // ========================================================================
-    // Latency counter operates strictly without artificial delays (#delays).
-    // Configurable parameter LATENCY defines exact number of wait cycles.
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            latched_addr    <= {ADDR_BITS{1'b0}};
-            latency_counter <= 8'd0;
-            serving         <= 1'b0;
-            mem_req_ready   <= 1'b0;
-            mem_resp_data   <= {BLOCK_BITS{1'b0}};
+            state_q        <= MEM_IDLE;
+            latched_addr_q <= {ADDR_BITS{1'b0}};
+            latency_cnt_q  <= 8'd0;
+            mem_resp_data  <= {BLOCK_BITS{1'b0}};
         end else begin
-            if (!serving) begin
-                mem_req_ready <= 1'b0;
+            state_q        <= state_d;
+            latched_addr_q <= latched_addr_d;
+            latency_cnt_q  <= latency_cnt_d;
+            mem_resp_data  <= resp_data_d;
+        end
+    end
+
+    // ========================================================================
+    // Next-State Logic & Transaction Control
+    // ========================================================================
+    always @(*) begin
+        state_d        = state_q;
+        latched_addr_d = latched_addr_q;
+        latency_cnt_d  = latency_cnt_q;
+        resp_data_d    = mem_resp_data;
+
+        case (state_q)
+            // ----------------------------------------------------------------
+            // MEM_IDLE: Await incoming memory read request
+            // ----------------------------------------------------------------
+            MEM_IDLE: begin
+                latency_cnt_d = 8'd0;
                 if (mem_req_val) begin
-                    serving         <= 1'b1;
-                    latched_addr    <= mem_req_addr;
-                    latency_counter <= 8'd1;
+                    latched_addr_d = mem_req_addr;
                     if (LATENCY <= 1) begin
-                        serving       <= 1'b0;
-                        mem_req_ready <= 1'b1;
-                        mem_resp_data <= in_modeled_depth ? mem_array[mem_req_addr[11:4]] :
-                                         { (mem_req_addr[31:4] << 4) | 32'hC,
-                                           (mem_req_addr[31:4] << 4) | 32'h8,
-                                           (mem_req_addr[31:4] << 4) | 32'h4,
-                                           (mem_req_addr[31:4] << 4) | 32'h0 };
+                        // 1-cycle turnaround: immediately prepare response
+                        resp_data_d = (mem_req_addr[ADDR_BITS-1:12] == 20'h0) ?
+                                      mem_array[mem_req_addr[11:4]] :
+                                      { ((mem_req_addr[ADDR_BITS-1:4] << 4) | 32'hC),
+                                        ((mem_req_addr[ADDR_BITS-1:4] << 4) | 32'h8),
+                                        ((mem_req_addr[ADDR_BITS-1:4] << 4) | 32'h4),
+                                        ((mem_req_addr[ADDR_BITS-1:4] << 4) | 32'h0) };
+                        state_d     = MEM_RESPONSE;
+                    end else begin
+                        latency_cnt_d = 8'd1;
+                        state_d       = MEM_ACCESS;
                     end
                 end
-            end else begin
-                // Maintain serving flag and increment counter until configured LATENCY reached
-                if (latency_counter < LATENCY) begin
-                    latency_counter <= latency_counter + 1'b1;
+            end
+
+            // ----------------------------------------------------------------
+            // MEM_ACCESS: Wait-state counting & busy isolation
+            // ----------------------------------------------------------------
+            MEM_ACCESS: begin
+                // In MEM_ACCESS, external bus changes (mem_req_val, mem_req_addr)
+                // are strictly ignored to prevent repeated/spurious triggers.
+                if (latency_cnt_q < (LATENCY - 1)) begin
+                    latency_cnt_d = latency_cnt_q + 1'b1;
+                    state_d       = MEM_ACCESS;
                 end else begin
-                    serving         <= 1'b0;
-                    mem_req_ready   <= 1'b1;
-                    mem_resp_data   <= selected_block;
+                    // Latency period met: load deterministic block into response buffer
+                    resp_data_d = selected_block;
+                    state_d     = MEM_RESPONSE;
                 end
             end
-        end
+
+            // ----------------------------------------------------------------
+            // MEM_RESPONSE: Present 128-bit block data and complete handshake
+            // ----------------------------------------------------------------
+            MEM_RESPONSE: begin
+                resp_data_d = selected_block;
+                // Single-pulse response: return to IDLE for subsequent requests
+                state_d     = MEM_IDLE;
+            end
+
+            default: begin
+                state_d = MEM_IDLE;
+            end
+        endcase
     end
 
 endmodule
