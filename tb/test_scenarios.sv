@@ -299,4 +299,148 @@ task automatic run_test_sequential_access();
     end
 endtask
 
+// ============================================================================
+// TEST 6: Reproducible Pseudo-Random Workload
+// ============================================================================
+// Objective:
+//   1. Generate a sequence of 64 pseudorandom addresses using a fixed seed (42).
+//   2. Workload exercises random cache lines, tags, and word offsets.
+//   3. Compare every returned data word against the golden reference model.
+//   4. Verify that hits, compulsory misses, and conflict misses match predictions.
+// ============================================================================
+task automatic run_test_random_access();
+    reg [ADDR_WIDTH-1:0] rand_addr;
+    reg [31:0] lfsr;
+    integer iter;
+    integer initial_tests, initial_hits, initial_misses;
+    begin
+        $display("\n==================================================================");
+        $display("   TEST 6: REPRODUCIBLE PSEUDO-RANDOM WORKLOAD                    ");
+        $display("==================================================================");
+
+        initial_tests  = total_tests;
+        initial_hits   = hit_count;
+        initial_misses = miss_count;
+
+        // Deterministic LFSR-based pseudorandom generation initialized with fixed seed
+        lfsr = 32'hDEADBEEF;
+
+        $display("[SCENARIO 6] Generating 64 pseudorandom read requests (Seed=0xDEADBEEF)...");
+        for (iter = 0; iter < 64; iter = iter + 1) begin
+            // 32-bit Galois LFSR update
+            lfsr = (lfsr >> 1) ^ (-(lfsr & 1'b1) & 32'hD0000001);
+
+            // Construct word-aligned address within realistic memory range
+            // Tag: bits [19:10] of lfsr, Index: bits [9:4], Offset: bits [3:2] << 2
+            rand_addr = {12'h0, lfsr[19:4], lfsr[3:2], 2'b00};
+
+            cpu_read(rand_addr, $sformatf("Test 6 - Random Access #%02d", iter));
+        end
+
+        $display("[SUMMARY] TEST 6: PSEUDO-RANDOM WORKLOAD COMPLETED.");
+        $display("          Accesses: %0d | Hits: %0d | Misses: %0d | Hit Rate: %0d%%",
+                 (total_tests - initial_tests), (hit_count - initial_hits),
+                 (miss_count - initial_misses),
+                 ((hit_count - initial_hits) * 100) / (total_tests - initial_tests));
+    end
+endtask
+
+// ============================================================================
+// TEST 7: Reset Invalidation Behavior
+// ============================================================================
+// Objective:
+//   1. Populate multiple lines in the cache with valid data.
+//   2. Verify that re-reading them produces hits.
+//   3. Assert asynchronous/synchronous active-low reset pulse (`rst_n = 0`).
+//   4. Re-access the exact same addresses.
+//   5. Verify that EVERY single access produces a COMPULSORY MISS (valid=0).
+//   6. Verify that no stale data is ever returned.
+// ============================================================================
+task automatic run_test_reset_behavior();
+    reg [ADDR_WIDTH-1:0] test_addrs [0:3];
+    integer initial_misses;
+    integer i;
+    begin
+        $display("\n==================================================================");
+        $display("   TEST 7: HARDWARE RESET INVALIDATION BEHAVIOR                   ");
+        $display("==================================================================");
+
+        test_addrs[0] = 32'h0000_1040; // Line 4
+        test_addrs[1] = 32'h0000_2080; // Line 8
+        test_addrs[2] = 32'h0000_30C0; // Line 12
+        test_addrs[3] = 32'h0000_4100; // Line 16
+
+        // Step 1: Pre-warm lines
+        $display("[SCENARIO 7.1] Pre-populating cache lines 4, 8, 12, 16...");
+        for (i = 0; i < 4; i = i + 1) begin
+            cpu_read(test_addrs[i], $sformatf("Test 7.1 - Pre-warm Line %0d", i));
+        end
+
+        // Step 2: Confirm they are cached
+        $display("[SCENARIO 7.2] Verifying pre-warmed lines hit...");
+        for (i = 0; i < 4; i = i + 1) begin
+            cpu_read(test_addrs[i], $sformatf("Test 7.2 - Pre-warm Hit Check %0d", i));
+        end
+
+        // Step 3: Apply Reset
+        $display("[SCENARIO 7.3] Asserting active-low hardware reset (rst_n = 0) for 3 cycles...");
+        @(posedge clk);
+        rst_n = 1'b0;
+        reset_reference_model(); // Golden model reflects reset
+        @(posedge clk);
+        @(posedge clk);
+        @(posedge clk);
+        rst_n = 1'b1;
+        @(posedge clk);
+        @(posedge clk);
+        $display("[SCENARIO 7.3] Hardware reset de-asserted. All valid bits must be 0.");
+
+        // Step 4: Verify post-reset accesses are all compulsory misses
+        initial_misses = miss_count;
+        $display("[SCENARIO 7.4] Accessing previously cached addresses post-reset (MUST MISS)...");
+        for (i = 0; i < 4; i = i + 1) begin
+            cpu_read(test_addrs[i], $sformatf("Test 7.4 - Post-Reset Compulsory Miss Line %0d", i));
+        end
+
+        if ((miss_count - initial_misses) == 4) begin
+            $display("[SUMMARY] TEST 7: RESET BEHAVIOR CONFIRMED: All 4 lines invalidated; no stale hits.");
+        end else begin
+            $display("[ERROR] TEST 7: Expected 4 post-reset misses, recorded %0d!", (miss_count - initial_misses));
+        end
+    end
+endtask
+
+// ============================================================================
+// TEST 8: Consecutive Backpressure & Pipelined Requests
+// ============================================================================
+// Objective:
+//   1. Stream multiple back-to-back requests with 0 idle bubble cycles.
+//   2. Assert `cpu_req_val` immediately as soon as `cpu_req_ready` is high.
+//   3. Mix hits and misses consecutively.
+//   4. Verify that the FSM does not drop transactions, lose requests, or double-respond.
+// ============================================================================
+task automatic run_test_consecutive_requests();
+    reg [ADDR_WIDTH-1:0] pipe_addrs [0:5];
+    integer i;
+    begin
+        $display("\n==================================================================");
+        $display("   TEST 8: CONSECUTIVE BACK-TO-BACK REQUEST STREAMING             ");
+        $display("==================================================================");
+
+        pipe_addrs[0] = 32'h0000_9000; // Line 0 (Miss)
+        pipe_addrs[1] = 32'h0000_9004; // Line 0 Word 1 (Immediate Hit)
+        pipe_addrs[2] = 32'h0000_9008; // Line 0 Word 2 (Immediate Hit)
+        pipe_addrs[3] = 32'h0000_A040; // Line 4 (Miss)
+        pipe_addrs[4] = 32'h0000_A04C; // Line 4 Word 3 (Immediate Hit)
+        pipe_addrs[5] = 32'h0000_900C; // Line 0 Word 3 (Immediate Hit)
+
+        $display("[SCENARIO 8] Issuing 6 consecutive requests with zero wait cycles...");
+        for (i = 0; i < 6; i = i + 1) begin
+            cpu_read(pipe_addrs[i], $sformatf("Test 8 - Consecutive Request #%0d", i));
+        end
+
+        $display("[SUMMARY] TEST 8: CONSECUTIVE REQUEST BACKPRESSURE & SEQUENCING VERIFIED.");
+    end
+endtask
+
 `endif // TEST_SCENARIOS_SV

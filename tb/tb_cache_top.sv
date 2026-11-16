@@ -303,13 +303,16 @@ module tb_cache_top;
         $display("[INFO] Initial power-on reset complete. Cache lines invalidated.");
 
         // --------------------------------------------------------------------
-        // Execute Progressive Test Scenarios
+        // Execute Progressive Test Scenarios (All 8 Mandatory Scenarios)
         // --------------------------------------------------------------------
         run_test_cold_cache();
         run_test_temporal_locality();
         run_test_spatial_locality();
         run_test_sequential_access();
         run_test_conflict_miss();
+        run_test_random_access();
+        run_test_reset_behavior();
+        run_test_consecutive_requests();
 
         #(CLK_PERIOD * 5);
         $display("\n==================================================================");
