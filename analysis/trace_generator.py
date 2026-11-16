@@ -64,18 +64,33 @@ class DecodedAddress:
                 f"Offset=0x{self.offset:1x} Word={self.word_sel}]")
 
 
-def decode_address(addr: int) -> DecodedAddress:
+def decode_address(
+    addr: int,
+    num_lines: int = NUM_LINES,
+    block_size: int = BLOCK_SIZE
+) -> DecodedAddress:
     """
-    Decodes a 32-bit address into Tag (31:10), Index (9:4), and Offset (3:0).
+    Decodes a 32-bit address into Tag, Index, and Offset fields.
+    For baseline parameters (num_lines=64, block_size=16):
+      Tag: [31:10] (22 bits), Index: [9:4] (6 bits), Offset: [3:0] (4 bits).
     Matches rtl/address_decoder.v exactly.
     """
+    import math
     addr = addr & 0xFFFFFFFF
-    tag = (addr >> 10) & TAG_MASK
-    index = (addr >> 4) & INDEX_MASK
-    offset = addr & OFFSET_MASK
+    offset_width = int(math.log2(block_size)) if block_size > 0 else OFFSET_WIDTH
+    index_width = int(math.log2(num_lines)) if num_lines > 0 else INDEX_WIDTH
+    tag_width = 32 - index_width - offset_width
+
+    tag_mask = (1 << tag_width) - 1
+    index_mask = (1 << index_width) - 1
+    offset_mask = (1 << offset_width) - 1
+
+    tag = (addr >> (index_width + offset_width)) & tag_mask
+    index = (addr >> offset_width) & index_mask
+    offset = addr & offset_mask
     word_sel = (offset >> 2) & 0x3
     byte_offset = offset & 0x3
-    block_addr = addr & ~OFFSET_MASK
+    block_addr = addr & ~offset_mask
 
     return DecodedAddress(
         addr=addr,

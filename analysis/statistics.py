@@ -91,7 +91,7 @@ class DirectMappedCache:
         Pure combinational lookup without updating state.
         Returns (is_hit, decoded_address).
         """
-        dec = decode_address(addr)
+        dec = decode_address(addr, num_lines=self.num_lines, block_size=self.block_size)
         line = self.lines[dec.index]
         is_hit = line.valid and (line.tag == dec.tag)
         return is_hit, dec
@@ -101,7 +101,7 @@ class DirectMappedCache:
         Process a memory access. Evaluates hit/miss and updates cache state on miss.
         """
         self.access_count += 1
-        dec = decode_address(addr)
+        dec = decode_address(addr, num_lines=self.num_lines, block_size=self.block_size)
         line = self.lines[dec.index]
 
         is_hit = line.valid and (line.tag == dec.tag)
@@ -226,7 +226,7 @@ class CacheSimulator:
         """
         Simulate a single access and perform definitive 3C miss classification.
         """
-        dec = decode_address(addr)
+        dec = decode_address(addr, num_lines=self.dm_cache.num_lines, block_size=self.dm_cache.block_size)
         block = dec.block_addr
 
         # 1. Check reference models
