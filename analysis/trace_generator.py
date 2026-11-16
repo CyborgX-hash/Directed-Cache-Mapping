@@ -164,6 +164,86 @@ class TraceGenerator:
         return list(self.traces)
 
     # --------------------------------------------------------------------------
+    # Pattern B: Repeated Access (Temporal Locality)
+    # --------------------------------------------------------------------------
+    def generate_repeated(
+        self,
+        target_addrs: Optional[List[int]] = None,
+        repeat_count: int = 16,
+        op: str = "READ"
+    ) -> List[TraceRecord]:
+        """
+        Generate repeated accesses to the same address or working set of addresses.
+        Objective: Analyze temporal locality and hit behavior under reuse.
+        Default: 4 addresses in block 0x00002000 repeated 16 times (64 accesses total).
+        First iteration warms the cache; subsequent iterations achieve 100% hits.
+        """
+        self.clear()
+        if target_addrs is None:
+            # 4 words of the same cache block (Index 0, Tag 8)
+            target_addrs = [0x00002000, 0x00002004, 0x00002008, 0x0000200C]
+
+        seq = 0
+        for loop in range(repeat_count):
+            for a in target_addrs:
+                dec = decode_address(a)
+                desc = f"Repeated access loop #{loop}: Addr=0x{a:08x} (Word {dec.word_sel})"
+                record = TraceRecord(
+                    seq_id=seq,
+                    addr=a,
+                    op=op,
+                    pattern_type="REPEATED",
+                    decoded=dec,
+                    description=desc
+                )
+                self.traces.append(record)
+                seq += 1
+
+        return list(self.traces)
+
+    # --------------------------------------------------------------------------
+    # Pattern C: Random Access (Unpredictable Working Set)
+    # --------------------------------------------------------------------------
+    def generate_random(
+        self,
+        count: int = 64,
+        seed: int = 42,
+        addr_min: int = 0x00000000,
+        addr_max: int = 0x0003FFFF,
+        align: int = 4,
+        op: str = "READ"
+    ) -> List[TraceRecord]:
+        """
+        Generate reproducible random addresses across memory address space.
+        Objective: Analyze cache performance under low-locality, unpredictable patterns.
+        Addresses are word-aligned (multiples of 4).
+        """
+        import random
+        self.clear()
+        rng = random.Random(seed)
+
+        # Ensure valid range
+        min_word = addr_min // align
+        max_word = addr_max // align
+
+        for i in range(count):
+            rand_word = rng.randint(min_word, max_word)
+            addr = (rand_word * align) & 0xFFFFFFFF
+            dec = decode_address(addr)
+            desc = f"Random access #{i} (seed={seed}): Idx={dec.index} Tag=0x{dec.tag:06x}"
+            record = TraceRecord(
+                seq_id=i,
+                addr=addr,
+                op=op,
+                pattern_type="RANDOM",
+                decoded=dec,
+                description=desc
+            )
+            self.traces.append(record)
+
+        return list(self.traces)
+
+    # --------------------------------------------------------------------------
     # File Exporters
     # --------------------------------------------------------------------------
     def save_csv(self, filepath: str):
@@ -211,22 +291,38 @@ class TraceGenerator:
 # ==============================================================================
 def main():
     parser = argparse.ArgumentParser(description="Memory Access Trace Generator")
-    parser.add_argument("--pattern", type=str, default="sequential",
-                        choices=["sequential"], help="Trace pattern")
+    parser.add_argument("--pattern", type=str, default="all",
+                        choices=["sequential", "repeated", "random", "all"],
+                        help="Trace pattern to generate")
     parser.add_argument("--count", type=int, default=64, help="Number of memory accesses")
     parser.add_argument("--start", type=lambda x: int(x, 0), default=0x00001000,
                         help="Starting address (hex or dec)")
     parser.add_argument("--stride", type=int, default=4, help="Address stride in bytes")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--repeat-count", type=int, default=16, help="Repetition multiplier for repeated pattern")
     parser.add_argument("--output-dir", type=str, default="traces", help="Output directory")
 
     args = parser.parse_args()
     gen = TraceGenerator()
 
-    if args.pattern == "sequential":
-        gen.generate_sequential(count=args.count, start_addr=args.start, stride=args.stride)
-        gen.save_csv(os.path.join(args.output_dir, "sequential_trace.csv"))
-        gen.save_hex(os.path.join(args.output_dir, "sequential_trace.hex"))
-        gen.save_txt(os.path.join(args.output_dir, "sequential_trace.txt"))
+    patterns = ["sequential", "repeated", "random"] if args.pattern == "all" else [args.pattern]
+
+    for p in patterns:
+        if p == "sequential":
+            gen.generate_sequential(count=args.count, start_addr=args.start, stride=args.stride)
+            gen.save_csv(os.path.join(args.output_dir, "sequential_trace.csv"))
+            gen.save_hex(os.path.join(args.output_dir, "sequential_trace.hex"))
+            gen.save_txt(os.path.join(args.output_dir, "sequential_trace.txt"))
+        elif p == "repeated":
+            gen.generate_repeated(repeat_count=args.repeat_count)
+            gen.save_csv(os.path.join(args.output_dir, "repeated_trace.csv"))
+            gen.save_hex(os.path.join(args.output_dir, "repeated_trace.hex"))
+            gen.save_txt(os.path.join(args.output_dir, "repeated_trace.txt"))
+        elif p == "random":
+            gen.generate_random(count=args.count, seed=args.seed)
+            gen.save_csv(os.path.join(args.output_dir, "random_trace.csv"))
+            gen.save_hex(os.path.join(args.output_dir, "random_trace.hex"))
+            gen.save_txt(os.path.join(args.output_dir, "random_trace.txt"))
 
 
 if __name__ == "__main__":
