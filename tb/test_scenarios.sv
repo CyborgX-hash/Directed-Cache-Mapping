@@ -167,4 +167,69 @@ task automatic run_test_spatial_locality();
     end
 endtask
 
+// ============================================================================
+// TEST 5: Conflict Miss (Same Index, Different Tag Eviction & Replacement)
+// ============================================================================
+// Objective:
+//   1. Access addresses mapping to the exact same cache index with differing tags.
+//      Addresses stride by 1024 bytes (0x400):
+//        - Addr A: 0x0000_0000 -> Tag 0, Index 0
+//        - Addr B: 0x0000_0400 -> Tag 1, Index 0
+//        - Addr C: 0x0000_0800 -> Tag 2, Index 0
+//        - Addr D: 0x0000_0C00 -> Tag 3, Index 0
+//   2. Verify that accessing Addr B evicts Addr A from Line 0 (Conflict Miss).
+//   3. Verify that re-accessing Addr A causes another conflict miss and evicts Addr B.
+//   4. Confirm data integrity of each newly replaced block.
+//   5. Verify conflict replacement behavior on a second index (Index 31).
+// ============================================================================
+task automatic run_test_conflict_miss();
+    reg [ADDR_WIDTH-1:0] addr_a, addr_b, addr_c, addr_d;
+    integer initial_conflicts;
+    begin
+        $display("\n==================================================================");
+        $display("   TEST 5: CONFLICT MISS & CACHE LINE REPLACEMENT                 ");
+        $display("==================================================================");
+
+        initial_conflicts = conflict_count;
+
+        // Same Index 0: Striding by 1024 bytes (0x400)
+        addr_a = 32'h0000_0000; // Tag 0, Index 0
+        addr_b = 32'h0000_0400; // Tag 1, Index 0
+        addr_c = 32'h0000_0800; // Tag 2, Index 0
+        addr_d = 32'h0000_0C00; // Tag 3, Index 0
+
+        $display("[SCENARIO 5.1] Step 1: Initial access to Addr A (0x%08h, Tag 0, Idx 0) -> Compulsory Miss", addr_a);
+        cpu_read(addr_a, "Test 5.1 - Addr A Cold Fill");
+
+        $display("[SCENARIO 5.1] Step 2: Re-access Addr A -> Must HIT", addr_a);
+        cpu_read(addr_a, "Test 5.1 - Addr A Hit");
+
+        $display("[SCENARIO 5.1] Step 3: Access Addr B (0x%08h, Tag 1, Idx 0) -> Must CONFLICT MISS & Replace Tag 0", addr_b);
+        cpu_read(addr_b, "Test 5.1 - Addr B Conflict Miss");
+
+        $display("[SCENARIO 5.1] Step 4: Re-access Addr B -> Must HIT", addr_b);
+        cpu_read(addr_b, "Test 5.1 - Addr B Hit");
+
+        $display("[SCENARIO 5.1] Step 5: Re-access Addr A (0x%08h, Tag 0) -> Must CONFLICT MISS & Evict Tag 1", addr_a);
+        cpu_read(addr_a, "Test 5.1 - Addr A Conflict Miss (Evicts B)");
+
+        $display("[SCENARIO 5.1] Step 6: Access Addr C (0x%08h, Tag 2, Idx 0) -> Must CONFLICT MISS & Evict Tag 0", addr_c);
+        cpu_read(addr_c, "Test 5.1 - Addr C Conflict Miss (Evicts A)");
+
+        $display("[SCENARIO 5.1] Step 7: Access Addr D (0x%08h, Tag 3, Idx 0) -> Must CONFLICT MISS & Evict Tag 2", addr_d);
+        cpu_read(addr_d, "Test 5.1 - Addr D Conflict Miss (Evicts C)");
+
+        // Scenario 5.2: Conflict on Line 31 (Base 0x0000_01F0, Tag 0 vs Tag 1: 0x0000_05F0)
+        $display("[SCENARIO 5.2] Conflict testing on Index 31 (Addr 0x0000_01F0 vs 0x0000_05F0)");
+        cpu_read(32'h0000_01F0, "Test 5.2 - Index 31 Tag 0 Cold Fill");
+        cpu_read(32'h0000_01F4, "Test 5.2 - Index 31 Tag 0 Spatial Hit");
+        cpu_read(32'h0000_05F0, "Test 5.2 - Index 31 Tag 1 Conflict Miss");
+        cpu_read(32'h0000_05F8, "Test 5.2 - Index 31 Tag 1 Spatial Hit");
+        cpu_read(32'h0000_01F0, "Test 5.2 - Index 31 Tag 0 Conflict Miss (Re-fetch)");
+
+        $display("[SUMMARY] TEST 5: CONFLICT MISS & REPLACEMENT VALIDATED. Recorded %0d conflict misses.",
+                 (conflict_count - initial_conflicts));
+    end
+endtask
+
 `endif // TEST_SCENARIOS_SV

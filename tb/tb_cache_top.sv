@@ -308,6 +308,7 @@ module tb_cache_top;
         run_test_cold_cache();
         run_test_temporal_locality();
         run_test_spatial_locality();
+        run_test_conflict_miss();
 
         #(CLK_PERIOD * 5);
         $display("\n==================================================================");
