@@ -1,0 +1,149 @@
+===================================================================================================================
+# DIRECT-MAPPED CACHE CONTROLLER - HARDWARE SYNTHESIS EVALUATION REPORT
+# Synthesis Tool: Yosys Open SYnthesis Suite (Version 0.71+post)
+# Author: Priyanshu (Performance Analyst & Hardware Synthesis Lead)
+===================================================================================================================
+Module Name               | Total Cells |  Seq Cells | Comb Cells |   Wires |  RAM Inference   |  Status 
+-------------------------------------------------------------------------------------------------------------------
+address_decoder           |           0 |          0 |          0 |       6 |    Logic/N/A     |   PASS  
+tag_comparator            |           3 |          0 |          3 |       6 |    Logic/N/A     |   PASS  
+cache_controller          |          40 |          3 |         37 |      58 |    Logic/N/A     |   PASS  
+memory_interface          |           0 |          0 |          0 |       8 |    Logic/N/A     |   PASS  
+valid_bit_ram             |         424 |         64 |        360 |     430 |    Logic/N/A     |   PASS  
+tag_ram                   |         288 |         64 |        224 |     292 |    Logic/N/A     |   PASS  
+cache_data_ram            |         288 |         64 |        224 |     292 | DFF Distributed  |   PASS  
+cache_storage             |        1001 |        192 |        812 |    1026 | DFF Distributed  |   PASS  
+cache_top (Full System)   |        1326 |        199 |       1131 |    1422 | DFF Distributed  |   PASS  
+===================================================================================================================
+
+===================================================================================================================
+DETAILED MODULE BREAKDOWN & ARCHITECTURAL ANALYSIS
+===================================================================================================================
+
+--- Module: address_decoder ---
+  Source File(s)         : rtl/address_decoder.v
+  Total Cell Count       : 0
+  Sequential Elements    : 0 cell instances
+  Combinational Logic    : 0 cells
+  Internal Nets/Wires    : 6 wires (68 bits)
+  Architectural Role     : Pure combinational bit-slicing logic (Tag[31:10], Idx[9:4], Off[3:0]). Zero gates/flops.
+  Synthesis Warnings     : 0 warnings (Clean synthesis)
+
+--- Module: tag_comparator ---
+  Source File(s)         : rtl/tag_comparator.v
+  Total Cell Count       : 3
+  Sequential Elements    : 0 cell instances
+  Combinational Logic    : 3 cells
+  Internal Nets/Wires    : 6 wires (48 bits)
+  Architectural Role     : 22-bit comparator logic (Priyanshu). Pure combinational ($eq / XOR tree + AND with valid).
+  Cell Primitive Counts  : $eq: 1, $logic_and: 1, $not: 1
+  Synthesis Warnings     : 0 warnings (Clean synthesis)
+
+--- Module: cache_controller ---
+  Source File(s)         : rtl/cache_controller.v
+  Total Cell Count       : 40
+  Sequential Elements    : 3 cell instances
+  Combinational Logic    : 37 cells
+  Internal Nets/Wires    : 58 wires (1175 bits)
+  Architectural Role     : FSM & bus control unit (Saksham). 6 FSM states, 163 flip-flop bits (state, addr, buffer).
+  Cell Primitive Counts  : $adffe: 3, $eq: 8, $logic_and: 1, $logic_not: 2, $mux: 16, $ne: 3, $pmux: 4, $reduce_and: 2, $reduce_bool: 1
+  Synthesis Warnings     : 0 warnings (Clean synthesis)
+
+--- Module: memory_interface ---
+  Source File(s)         : rtl/memory_interface.v
+  Total Cell Count       : 0
+  Sequential Elements    : 0 cell instances
+  Combinational Logic    : 0 cells
+  Internal Nets/Wires    : 8 wires (324 bits)
+  Architectural Role     : Bus bridge & pass-through register slice. Pure routing interconnect.
+  Synthesis Warnings     : 0 warnings (Clean synthesis)
+
+--- Module: valid_bit_ram ---
+  Source File(s)         : rtl/valid_bit_ram.v
+  Total Cell Count       : 424
+  Sequential Elements    : 64 cell instances
+  Combinational Logic    : 360 cells
+  Internal Nets/Wires    : 430 wires (476 bits)
+  Architectural Role     : 64 x 1-bit array with synchronous active-low clear. Synthesizes to 64 DFFs with write enables.
+  Cell Primitive Counts  : $and: 156, $dffe: 64, $mux: 134, $ne: 64, $not: 6
+  Synthesis Warnings     : 0 warnings (Clean synthesis)
+
+--- Module: tag_ram ---
+  Source File(s)         : rtl/tag_ram.v
+  Total Cell Count       : 288
+  Sequential Elements    : 64 cell instances
+  Combinational Logic    : 224 cells
+  Internal Nets/Wires    : 292 wires (3032 bits)
+  Architectural Role     : 64 x 22-bit tag array (1,408 bits). Synthesizes to 64 22-bit DFF registers and read mux tree.
+  Cell Primitive Counts  : $and: 152, $dffe: 64, $mux: 66, $not: 6
+  Synthesis Warnings     : 0 warnings (Clean synthesis)
+
+--- Module: cache_data_ram ---
+  Source File(s)         : rtl/cache_data_ram.v
+  Total Cell Count       : 288
+  Sequential Elements    : 64 cell instances
+  Combinational Logic    : 224 cells
+  Internal Nets/Wires    : 292 wires (16812 bits)
+  Architectural Role     : 64 x 128-bit data array (8,192 bits / 1 KB). Synthesizes to 64 128-bit registers.
+  Cell Primitive Counts  : $and: 152, $dffe: 64, $mux: 66, $not: 6
+  Synthesis Warnings     : 0 warnings (Clean synthesis)
+
+--- Module: cache_storage ---
+  Source File(s)         : rtl/valid_bit_ram.v, rtl/tag_ram.v, rtl/cache_data_ram.v, rtl/cache_storage.v
+  Total Cell Count       : 1001
+  Sequential Elements    : 192 cell instances
+  Combinational Logic    : 812 cells
+  Internal Nets/Wires    : 1026 wires (20643 bits)
+  Architectural Role     : Integrated 1 KB cache storage subsystem. 192 registers (9,664 storage bits total).
+  Cell Primitive Counts  : $and: 460, $dffe: 192, $mux: 267, $ne: 64, $not: 18, $paramod$795f81b8c403f716819727ed3a467264497cdaf7\tag_ram: 1, $paramod$9715fa7bdbf7c8968bd5a3529a57df8ec492ac80\cache_data_ram: 1, $paramod$e019f90c0ea90be45f7788f2829c919ea374a9da\valid_bit_ram: 1
+  Synthesis Warnings     : 0 warnings (Clean synthesis)
+
+--- Module: cache_top (Full System) ---
+  Source File(s)         : rtl/address_decoder.v, rtl/valid_bit_ram.v, rtl/tag_ram.v, rtl/cache_data_ram.v, rtl/cache_storage.v, rtl/tag_comparator.v, rtl/main_memory.v, rtl/memory_interface.v, rtl/cache_controller.v, rtl/cache_top.v
+  Total Cell Count       : 1326
+  Sequential Elements    : 199 cell instances
+  Combinational Logic    : 1131 cells
+  Internal Nets/Wires    : 1422 wires (32131 bits)
+  Architectural Role     : Full system integration including behavioral simulation DRAM model (main_memory.v).
+  Cell Primitive Counts  : $add: 1, $adffe: 7, $and: 460, $dffe: 192, $eq: 11, $logic_and: 2, $logic_not: 4, $lt: 1, $mux: 544, $ne: 70, $not: 19, $paramod$19e82640f00a50e91f5453852b0bc7331b3369dc\memory_interface: 1, $paramod$5542c4851b737d1834a192cd6a7929635d399e62\cache_storage: 1, $paramod$b9ec6491c0f390d6d50b95dea23a2a749aeab6f4\cache_controller: 1, $paramod$f6340a51eca185fbb4f974055feb1d13d04a2c31\main_memory: 1, $pmux: 7, $reduce_and: 5, $reduce_bool: 3
+  Synthesis Warnings     : 0 warnings (Clean synthesis)
+
+===================================================================================================================
+CRITICAL HARDWARE SYNTHESIS INSIGHTS & RAM INFERENCE DOCUMENTATION
+===================================================================================================================
+
+1. RAM Structure Inference Analysis:
+   - Modern FPGA and ASIC synthesis tools (including Yosys, Vivado, and Synopsys Design Compiler)
+     require synchronous (clocked) read operations to infer dedicated hardware Block RAM (BRAM)
+     primitives (e.g. 18Kb/36Kb RAMB36 primitives on AMD/Xilinx or synchronous SRAM macros in ASIC PDKs).
+   - In rtl/cache_data_ram.v and rtl/tag_ram.v, the read port is implemented as:
+         assign rdata = mem[raddr];  // Asynchronous combinational read
+   - Because the read port presents data combinatorially on the same clock edge that raddr changes,
+     it cannot be mapped into a single-port or dual-port synchronous BRAM primitive without inserting
+     a clock cycle of read latency.
+   - Consequently, Yosys correctly and deterministically decomposes the 1024-byte (8192-bit) data array
+     and 1408-bit tag array into distributed D-type flip-flops ($dffe) coupled with wide tree multiplexers
+     ($mux) for read selection and decode trees ($and) for write enables.
+   - Synthesis recommendation for ASIC/FPGA tapeout: Modify cache_data_ram.v to use synchronous clocked
+     read (always @(posedge clk) rdata <= mem[raddr]) if dedicated dual-port BRAM macro inference is desired.
+
+2. Separation of Synthesizable RTL from Simulation-Only Behavioral Memory:
+   - In rtl/cache_top.v, rtl/main_memory.v is instantiated as a simulation convenience to model
+     off-chip main memory latency (10 cycles).
+   - In real hardware digital ASIC or SoC synthesis, main memory is external (DRAM/SDRAM) or a dedicated
+     AXI/AHB bus interconnect.
+   - As documented in the table above:
+       * Pure synthesizable cache core (cache_controller + tag_comparator + cache_storage + address_decoder)
+         occupies exactly 1,044 cells.
+       * The behavioral main_memory adds 282 cells purely to emulate off-chip memory wait states and block storage.
+   - Hardware resource budgets for the cache controller IP must evaluate only the 1,044 synthesizable core cells.
+
+3. Flip-Flop Register Bit Summary (Synthesizable Core):
+   - Valid Bit Storage : 64 bits (64 lines x 1 bit)
+   - Tag RAM Storage   : 1,408 bits (64 lines x 22 bits)
+   - Cache Data RAM    : 8,192 bits (64 lines x 128 bits = 1024 bytes)
+   - Controller State  : 3 bits (FSM state register)
+   - Controller Buffers: 32 bits (latched CPU address) + 128 bits (data buffer register)
+   - Total Core Flops  : 9,827 physical DFF bits.
+
+===================================================================================================================

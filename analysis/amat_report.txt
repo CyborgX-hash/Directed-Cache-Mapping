@@ -1,0 +1,45 @@
+# =====================================================================
+# Direct-Mapped Cache Controller: AMAT Performance Report
+# Author: Priyanshu (Performance Analyst & Synthesis Lead)
+# Baseline Parameters : Hit Time = 1.0 cyc | Raw Mem Latency = 10.0 cyc
+# Controller Protocol : Overhead = 4.0 cyc | Total RTL Miss Penalty = 14.0 cyc
+# =====================================================================
+
+===================================================================================================================
+Workload       | Accesses |   Hits | Misses | Hit Ratio | Miss Ratio | AMAT (Base) | AMAT (RTL-HW) | Speedup
+-------------------------------------------------------------------------------------------------------------------
+Sequential     |       64 |     48 |     16 |    75.00% |     25.00% |     3.500 cyc |      4.500 cyc |   3.14x
+Repeated       |       64 |     63 |      1 |    98.44% |      1.56% |     1.156 cyc |      1.219 cyc |   9.51x
+Random         |       64 |      0 |     64 |     0.00% |    100.00% |    11.000 cyc |     15.000 cyc |   1.00x
+Conflict       |       64 |      0 |     64 |     0.00% |    100.00% |    11.000 cyc |     15.000 cyc |   1.00x
+===================================================================================================================
+
+Analytical Derivations:
+
+--- Sequential Workload ---
+  Access Count     : 64
+  Hit Ratio        : 75.00%
+  Miss Ratio       : 25.00%
+  AMAT (Baseline)  : 1.0 + (0.2500 * 10.0) = 3.5000 cycles
+  AMAT (Hardware)  : 1.0 + (0.2500 * (10.0 + 4.0)) = 4.5000 cycles
+
+--- Repeated Workload ---
+  Access Count     : 64
+  Hit Ratio        : 98.44%
+  Miss Ratio       : 1.56%
+  AMAT (Baseline)  : 1.0 + (0.0156 * 10.0) = 1.1562 cycles
+  AMAT (Hardware)  : 1.0 + (0.0156 * (10.0 + 4.0)) = 1.2188 cycles
+
+--- Random Workload ---
+  Access Count     : 64
+  Hit Ratio        : 0.00%
+  Miss Ratio       : 100.00%
+  AMAT (Baseline)  : 1.0 + (1.0000 * 10.0) = 11.0000 cycles
+  AMAT (Hardware)  : 1.0 + (1.0000 * (10.0 + 4.0)) = 15.0000 cycles
+
+--- Conflict Workload ---
+  Access Count     : 64
+  Hit Ratio        : 0.00%
+  Miss Ratio       : 100.00%
+  AMAT (Baseline)  : 1.0 + (1.0000 * 10.0) = 11.0000 cycles
+  AMAT (Hardware)  : 1.0 + (1.0000 * (10.0 + 4.0)) = 15.0000 cycles

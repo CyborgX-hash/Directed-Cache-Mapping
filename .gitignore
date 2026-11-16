@@ -7,3 +7,9 @@ sim/
 *.log
 *.jou
 .DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+

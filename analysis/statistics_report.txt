@@ -1,0 +1,54 @@
+# Direct-Mapped Cache Controller: Performance Statistics Report
+# Cache Geometry: 1 KB, 64 Lines, 16-Byte Blocks, Direct-Mapped
+# Reference Model: 1 KB Fully Associative LRU for 3C Miss Classification
+
+===================================================================================================================
+Workload       | Accesses |   Hits | Misses | Hit Rate | Miss Rate | Compulsory | Capacity | Conflict | Refills | Sum=1.0
+-------------------------------------------------------------------------------------------------------------------
+Sequential     |       64 |     48 |     16 |   75.00% |    25.00% |         16 |        0 |        0 |      16 | VALID
+Repeated       |       64 |     63 |      1 |   98.44% |     1.56% |          1 |        0 |        0 |       1 | VALID
+Random         |       64 |      0 |     64 |    0.00% |   100.00% |         64 |        0 |        0 |      64 | VALID
+Conflict       |       64 |      0 |     64 |    0.00% |   100.00% |          4 |        0 |       60 |      64 | VALID
+===================================================================================================================
+
+Detailed 3C Architectural Breakdown:
+
+--- Sequential Access Workload ---
+  Total Accesses      : 64
+  Cache Hits          : 48 (75.00%)
+  Cache Misses        : 16 (25.00%)
+  Compulsory Misses   : 16 (25.00% of accesses)
+  Capacity Misses     : 0 (0.00% of accesses)
+  Conflict Misses     : 0 (0.00% of accesses)
+  Refill Operations   : 16
+  Hit Rate + Miss Rate: 1.000000 (Validation: PASS)
+
+--- Repeated Access Workload ---
+  Total Accesses      : 64
+  Cache Hits          : 63 (98.44%)
+  Cache Misses        : 1 (1.56%)
+  Compulsory Misses   : 1 (1.56% of accesses)
+  Capacity Misses     : 0 (0.00% of accesses)
+  Conflict Misses     : 0 (0.00% of accesses)
+  Refill Operations   : 1
+  Hit Rate + Miss Rate: 1.000000 (Validation: PASS)
+
+--- Random Access Workload ---
+  Total Accesses      : 64
+  Cache Hits          : 0 (0.00%)
+  Cache Misses        : 64 (100.00%)
+  Compulsory Misses   : 64 (100.00% of accesses)
+  Capacity Misses     : 0 (0.00% of accesses)
+  Conflict Misses     : 0 (0.00% of accesses)
+  Refill Operations   : 64
+  Hit Rate + Miss Rate: 1.000000 (Validation: PASS)
+
+--- Conflict Access Workload ---
+  Total Accesses      : 64
+  Cache Hits          : 0 (0.00%)
+  Cache Misses        : 64 (100.00%)
+  Compulsory Misses   : 4 (6.25% of accesses)
+  Capacity Misses     : 0 (0.00% of accesses)
+  Conflict Misses     : 60 (93.75% of accesses)
+  Refill Operations   : 64
+  Hit Rate + Miss Rate: 1.000000 (Validation: PASS)

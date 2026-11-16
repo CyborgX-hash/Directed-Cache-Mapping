@@ -1,0 +1,31 @@
+# =====================================================================
+# Direct-Mapped Cache Controller: Architectural Sensitivity Report
+# Author: Priyanshu (Performance Analyst & Synthesis Lead)
+# =====================================================================
+
+1. Cache Capacity Sensitivity (Block Size = 16B):
+   Capacity  | Lines | Tag Bits | Index Bits | Sequential Hit% | Conflict Hit%
+   -------------------------------------------------------------------------
+    256 B   |    16 |       24 |          4 |          75.00% |         0.00%
+    512 B   |    32 |       23 |          5 |          75.00% |         0.00%
+   1024 B   |    64 |       22 |          6 |          75.00% |         0.00% (PRIMARY BASELINE)
+   2048 B   |   128 |       21 |          7 |          75.00% |         0.00%
+   4096 B   |   256 |       20 |          8 |          75.00% |        96.88%
+
+2. Block Size Tradeoff (Capacity = 1 KB):
+   Block Size | Words/Blk | Num Lines | Sequential Hit% | Est. AMAT (Base)
+   -----------------------------------------------------------------------
+    8 Bytes   |         2 |       128 |          50.00% |      7.000 cyc
+   16 Bytes   |         4 |        64 |          75.00% |      4.500 cyc (PRIMARY BASELINE)
+   32 Bytes   |         8 |        32 |          87.50% |      3.250 cyc
+   64 Bytes   |        16 |        16 |          93.75% |      2.625 cyc
+
+3. Memory Latency Scaling (Baseline 1 KB, 16B Block):
+   Memory Latency | AMAT Repeated (Hit 98.4%) | AMAT Sequential (Hit 75%) | AMAT Conflict (Hit 0%)
+   ----------------------------------------------------------------------------------------------
+     2 cycles     |              1.031 cyc |               1.500 cyc |            3.000 cyc
+     5 cycles     |              1.078 cyc |               2.250 cyc |            6.000 cyc
+    10 cycles     |              1.156 cyc |               3.500 cyc |           11.000 cyc (PRIMARY BASELINE)
+    20 cycles     |              1.312 cyc |               6.000 cyc |           21.000 cyc
+    50 cycles     |              1.781 cyc |              13.500 cyc |           51.000 cyc
+   100 cycles     |              2.562 cyc |              26.000 cyc |          101.000 cyc
