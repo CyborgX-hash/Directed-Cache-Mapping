@@ -302,7 +302,10 @@ module tb_cache_top;
 
         $display("[INFO] Initial power-on reset complete. Cache lines invalidated.");
 
-        // Placeholder for progressive test scenario execution
+        // --------------------------------------------------------------------
+        // Execute Progressive Test Scenarios
+        // --------------------------------------------------------------------
+        run_test_cold_cache();
 
         #(CLK_PERIOD * 5);
         $display("\n==================================================================");
