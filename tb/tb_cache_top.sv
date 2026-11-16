@@ -306,6 +306,8 @@ module tb_cache_top;
         // Execute Progressive Test Scenarios
         // --------------------------------------------------------------------
         run_test_cold_cache();
+        run_test_temporal_locality();
+        run_test_spatial_locality();
 
         #(CLK_PERIOD * 5);
         $display("\n==================================================================");
