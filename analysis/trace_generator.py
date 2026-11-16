@@ -244,6 +244,58 @@ class TraceGenerator:
         return list(self.traces)
 
     # --------------------------------------------------------------------------
+    # Pattern D: Conflict Access (Thrashing Same Cache Set)
+    # --------------------------------------------------------------------------
+    def generate_conflict(
+        self,
+        target_index: int = 0,
+        num_competing_tags: int = 4,
+        loops: int = 16,
+        word_offset: int = 0,
+        op: str = "READ"
+    ) -> List[TraceRecord]:
+        """
+        Generate addresses that map to the exact same cache index but have different tags.
+        Example (index 0, word 0):
+          0x00000000 (Tag 0, Idx 0)
+          0x00000400 (Tag 1, Idx 0)
+          0x00000800 (Tag 2, Idx 0)
+          0x00000C00 (Tag 3, Idx 0)
+        Objective:
+          Demonstrate severe conflict misses in a direct-mapped cache.
+          Since all competing blocks map to the same line, each access evicts
+          the previously loaded block. In a direct-mapped cache, even though the
+          working set (4 blocks = 64 B) is vastly smaller than the 1 KB capacity,
+          every repeat access misses due to line contention.
+        """
+        self.clear()
+        # Stride between identical indices is exactly the cache capacity (1024 B = 0x400)
+        index_offset = (target_index & INDEX_MASK) << OFFSET_WIDTH
+        base_addrs = [
+            ((tag << (INDEX_WIDTH + OFFSET_WIDTH)) | index_offset | (word_offset << 2))
+            for tag in range(num_competing_tags)
+        ]
+
+        seq = 0
+        for loop in range(loops):
+            for i, a in enumerate(base_addrs):
+                dec = decode_address(a)
+                desc = (f"Conflict access loop #{loop} (Tag 0x{dec.tag:02x}): "
+                        f"Target Line {dec.index:02d} thrashing")
+                record = TraceRecord(
+                    seq_id=seq,
+                    addr=a,
+                    op=op,
+                    pattern_type="CONFLICT",
+                    decoded=dec,
+                    description=desc
+                )
+                self.traces.append(record)
+                seq += 1
+
+        return list(self.traces)
+
+    # --------------------------------------------------------------------------
     # File Exporters
     # --------------------------------------------------------------------------
     def save_csv(self, filepath: str):
@@ -292,7 +344,7 @@ class TraceGenerator:
 def main():
     parser = argparse.ArgumentParser(description="Memory Access Trace Generator")
     parser.add_argument("--pattern", type=str, default="all",
-                        choices=["sequential", "repeated", "random", "all"],
+                        choices=["sequential", "repeated", "random", "conflict", "all"],
                         help="Trace pattern to generate")
     parser.add_argument("--count", type=int, default=64, help="Number of memory accesses")
     parser.add_argument("--start", type=lambda x: int(x, 0), default=0x00001000,
@@ -300,12 +352,14 @@ def main():
     parser.add_argument("--stride", type=int, default=4, help="Address stride in bytes")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--repeat-count", type=int, default=16, help="Repetition multiplier for repeated pattern")
+    parser.add_argument("--conflict-index", type=int, default=0, help="Target cache index for conflict pattern")
+    parser.add_argument("--conflict-tags", type=int, default=4, help="Number of competing tags for conflict pattern")
     parser.add_argument("--output-dir", type=str, default="traces", help="Output directory")
 
     args = parser.parse_args()
     gen = TraceGenerator()
 
-    patterns = ["sequential", "repeated", "random"] if args.pattern == "all" else [args.pattern]
+    patterns = ["sequential", "repeated", "random", "conflict"] if args.pattern == "all" else [args.pattern]
 
     for p in patterns:
         if p == "sequential":
@@ -323,6 +377,15 @@ def main():
             gen.save_csv(os.path.join(args.output_dir, "random_trace.csv"))
             gen.save_hex(os.path.join(args.output_dir, "random_trace.hex"))
             gen.save_txt(os.path.join(args.output_dir, "random_trace.txt"))
+        elif p == "conflict":
+            # 4 competing tags x 16 loops = 64 accesses
+            loops = max(1, args.count // args.conflict_tags)
+            gen.generate_conflict(target_index=args.conflict_index,
+                                  num_competing_tags=args.conflict_tags,
+                                  loops=loops)
+            gen.save_csv(os.path.join(args.output_dir, "conflict_trace.csv"))
+            gen.save_hex(os.path.join(args.output_dir, "conflict_trace.hex"))
+            gen.save_txt(os.path.join(args.output_dir, "conflict_trace.txt"))
 
 
 if __name__ == "__main__":
